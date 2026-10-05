@@ -19,3 +19,10 @@ COPY . /app
 RUN python -m pip install -e ./stac_fastapi/types[dev] && \
     python -m pip install -e ./stac_fastapi/api[dev] && \
     python -m pip install -e ./stac_fastapi/extensions[dev]
+
+FROM builder AS oidc
+COPY --from=sqlalchemy . /backend
+RUN python -m pip install -e "/backend[server]"
+
+# Keep the default image independent of the optional backend build context.
+FROM builder AS default

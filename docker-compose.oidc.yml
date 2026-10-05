@@ -1,0 +1,30 @@
+name: stac-fastapi-sqlalchemy
+
+services:
+  api:
+    container_name: skraafoto-stac-api
+    image: skraafoto-stac-fastapi:oidc
+    build:
+      context: .
+      target: oidc
+      additional_contexts:
+        sqlalchemy: ../kds-stac-fastapi-sqlalchemy
+    command: ["uvicorn", "oidc_app:app", "--host", "0.0.0.0", "--port", "8081"]
+    ports:
+      - "8081:8081"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      ENVIRONMENT: local
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8081
+      RELOAD: "false"
+      POSTGRES_USER: ${POSTGRES_USER:-dev_user}
+      POSTGRES_PASS: ${POSTGRES_PASS:-dev_password}
+      POSTGRES_DBNAME: ${POSTGRES_DBNAME:-skraafoto}
+      POSTGRES_HOST_READER: host.docker.internal
+      POSTGRES_HOST_WRITER: host.docker.internal
+      POSTGRES_PORT: ${POSTGRES_PORT:-5439}
+      AUTH_JWKS_URL: http://host.docker.internal:8180/realms/kds-example/protocol/openid-connect/certs
+      AUTH_ISSUER: http://localhost:8180/realms/kds-example
+      AUTH_AUDIENCE: dataforsyningen
