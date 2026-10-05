@@ -241,6 +241,45 @@ def test_deployment_requires_configuration(monkeypatch, missing):
         runpy.run_path(str(Path(__file__).resolve().parents[3] / "oidc_app.py"))
 
 
+def test_deployment_rights_endpoint(monkeypatch):
+    api = RouteDependencies._build_api()
+    key = Ed25519PrivateKey.generate()
+    monkeypatch.setitem(
+        sys.modules, "stac_fastapi.sqlalchemy.app", SimpleNamespace(app=api.app)
+    )
+    for name, value in {
+        "AUTH_ISSUER": "https://issuer.example",
+        "AUTH_AUDIENCE": "stac",
+        "AUTH_JWKS_URL": "https://issuer.example/jwks",
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(
+        jwt.PyJWKClient, "get_signing_key_from_jwt",
+        lambda self, encoded: SimpleNamespace(key=key.public_key()),
+    )
+    runpy.run_path(str(Path(__file__).resolve().parents[3] / "oidc_app.py"))
+    with TestClient(api.app) as client:
+        assert client.get("/oauth2/introspect").status_code == 401
+        encoded = token(
+            key, hiddenProductSlugs=["skraafoto_fri"], groups=["kds-test"],
+            client_id="dataforsyningen", azp="dataforsyningen", sid="session",
+            scope="openid profile offline_access",
+        )
+        response = client.get(
+            "/oauth2/introspect",
+            headers={"Authorization": f"Bearer {encoded}"},
+        )
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        assert response.json() == {
+            **jwt.decode(encoded, options={"verify_signature": False}),
+            "validation": "jwt",
+            "active": True,
+            "token_type": "Bearer",
+            "allowed_products": [],
+        }
+
+
 @pytest.mark.parametrize(
     "claims, status, products",
     [
