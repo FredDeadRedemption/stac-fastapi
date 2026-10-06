@@ -67,20 +67,17 @@ class OIDCTokenAuth:
                 detail="invalid token",
                 headers={"WWW-Authenticate": "Bearer"},
             ) from exc
-        request.scope["auth"] = claims
         request.state.auth = claims
         rights = claims.get("rights", [])
-        hidden = claims.get("hiddenProductSlugs", [])
+        products = claims.get("hiddenProductSlugs", [])
         if any(
             not isinstance(values, list)
             or any(not isinstance(value, str) for value in values)
-            for values in (rights, hidden)
+            for values in (rights, products)
         ):
             logger.warning("Invalid OIDC product entitlement claims")
             raise HTTPException(status_code=403, detail="invalid product entitlements")
-        request.scope["allowed_products"] = {
-            right[len("product-"):] for right in rights if right.startswith("product-")
-        } - set(hidden)
+        request.scope["allowed_products"] = set(products)
         prefix = getattr(request.app.state, "router_prefix", "")
         if (
             request.method not in ("GET", "HEAD", "OPTIONS")

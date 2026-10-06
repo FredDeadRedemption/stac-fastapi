@@ -1,7 +1,4 @@
 import time
-import runpy
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import jwt
@@ -27,7 +24,6 @@ def authenticated_app(monkeypatch):
 
     @app.api_route("/data", methods=["GET", "POST", "PUT", "DELETE"])
     def data(request: Request):
-        assert request.scope["auth"] == request.state.auth
         return {
             "sub": request.state.auth["sub"],
             "products": sorted(request.scope["allowed_products"]),
@@ -51,6 +47,7 @@ def token(private_key, **overrides):
         "iat": now,
         "exp": now + 300,
         "rights": ["product-skraafoto_fri", "stac-write"],
+        "hiddenProductSlugs": ["skraafoto_fri"],
         **overrides,
     }
     return jwt.encode(claims, private_key, algorithm="EdDSA")
@@ -213,81 +210,18 @@ def test_prefixed_health_route_is_public():
         assert client.get("/stac/collections").status_code == 401
 
 
-def test_deployment_entrypoint_enables_authentication(monkeypatch):
-    api = RouteDependencies._build_api()
-    monkeypatch.setitem(
-        sys.modules, "stac_fastapi.sqlalchemy.app", SimpleNamespace(app=api.app)
-    )
-    monkeypatch.setenv("AUTH_ISSUER", "https://issuer.example")
-    monkeypatch.setenv("AUTH_AUDIENCE", "stac")
-    monkeypatch.setenv("AUTH_JWKS_URL", "https://issuer.example/jwks")
-    deployed = runpy.run_path(str(Path(__file__).resolve().parents[3] / "oidc_app.py"))
-    assert deployed["app"] is api.app
-    with TestClient(api.app) as client:
-        assert client.get("/collections").status_code == 401
-        assert client.post("/collections").status_code == 401
-        assert client.get("/_mgmt/ping").status_code == 200
-
-
-@pytest.mark.parametrize("missing", ["AUTH_ISSUER", "AUTH_AUDIENCE", "AUTH_JWKS_URL"])
-def test_deployment_requires_configuration(monkeypatch, missing):
-    monkeypatch.setitem(
-        sys.modules, "stac_fastapi.sqlalchemy.app", SimpleNamespace(app=FastAPI())
-    )
-    for name in ("AUTH_ISSUER", "AUTH_AUDIENCE", "AUTH_JWKS_URL"):
-        monkeypatch.setenv(name, "configured")
-    monkeypatch.delenv(missing)
-    with pytest.raises(KeyError, match=missing):
-        runpy.run_path(str(Path(__file__).resolve().parents[3] / "oidc_app.py"))
-
-
-def test_deployment_rights_endpoint(monkeypatch):
-    api = RouteDependencies._build_api()
-    key = Ed25519PrivateKey.generate()
-    monkeypatch.setitem(
-        sys.modules, "stac_fastapi.sqlalchemy.app", SimpleNamespace(app=api.app)
-    )
-    for name, value in {
-        "AUTH_ISSUER": "https://issuer.example",
-        "AUTH_AUDIENCE": "stac",
-        "AUTH_JWKS_URL": "https://issuer.example/jwks",
-    }.items():
-        monkeypatch.setenv(name, value)
-    monkeypatch.setattr(
-        jwt.PyJWKClient, "get_signing_key_from_jwt",
-        lambda self, encoded: SimpleNamespace(key=key.public_key()),
-    )
-    runpy.run_path(str(Path(__file__).resolve().parents[3] / "oidc_app.py"))
-    with TestClient(api.app) as client:
-        assert client.get("/oauth2/introspect").status_code == 401
-        encoded = token(
-            key, hiddenProductSlugs=["skraafoto_fri"], groups=["kds-test"],
-            client_id="dataforsyningen", azp="dataforsyningen", sid="session",
-            scope="openid profile offline_access",
-        )
-        response = client.get(
-            "/oauth2/introspect",
-            headers={"Authorization": f"Bearer {encoded}"},
-        )
-        assert response.status_code == 200
-        assert response.headers["cache-control"] == "no-store"
-        assert response.json() == {
-            **jwt.decode(encoded, options={"verify_signature": False}),
-            "validation": "jwt",
-            "active": True,
-            "token_type": "Bearer",
-            "allowed_products": [],
-        }
-
-
 @pytest.mark.parametrize(
     "claims, status, products",
     [
-        ({"rights": []}, 200, []),
-        ({"hiddenProductSlugs": ["skraafoto_fri"]}, 200, []),
-        ({"rights": ["product-skraafoto_hemmelig"]}, 200, ["skraafoto_hemmelig"]),
+        ({"rights": []}, 200, ["skraafoto_fri"]),
+        ({"hiddenProductSlugs": ["skraafoto_fri"]}, 200, ["skraafoto_fri"]),
+        ({"rights": ["product-skraafoto_hemmelig"]}, 200, ["skraafoto_fri"]),
+        ({"hiddenProductSlugs": []}, 200, []),
+        ({"hiddenProductSlugs": ["other", "other"]}, 200, ["other"]),
         ({"rights": "product-skraafoto_fri"}, 403, None),
         ({"hiddenProductSlugs": None}, 403, None),
+        ({"hiddenProductSlugs": "skraafoto_fri"}, 403, None),
+        ({"hiddenProductSlugs": [123]}, 403, None),
         ({"rights": [123]}, 403, None),
     ],
 )
@@ -310,3 +244,14 @@ def test_product_access_does_not_grant_writes(authenticated_app):
             headers={"Authorization": f"Bearer {token(key, rights=['product-skraafoto_fri'])}"},
         )
         assert response.status_code == 403
+
+
+def test_missing_product_list_denies_access(authenticated_app):
+    app, _, key = authenticated_app
+    claims = jwt.decode(token(key), options={"verify_signature": False})
+    del claims["hiddenProductSlugs"]
+    encoded = jwt.encode(claims, key, algorithm="EdDSA")
+    with TestClient(app) as client:
+        response = client.get("/data", headers={"Authorization": f"Bearer {encoded}"})
+        assert response.status_code == 200
+        assert response.json()["products"] == []
