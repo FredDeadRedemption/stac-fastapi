@@ -18,6 +18,9 @@ OIDCTokenAuth(
 ).install(api.app)
 ```
 
+Validation uses EdDSA, 60 seconds of clock leeway and a 3-second JWKS timeout.
+Tokens must contain `exp`, `iat`, `iss`, `aud` and `sub`.
+
 The dependency validates bearer tokens and makes the token claims available
 through `request.state.auth`. The `hiddenProductSlugs` claim is exposed as
 `request.scope["allowed_products"]`. The management ping endpoint remains

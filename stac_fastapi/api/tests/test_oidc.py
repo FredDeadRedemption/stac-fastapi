@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 from types import SimpleNamespace
 
 import jwt
@@ -84,6 +85,26 @@ def test_invalid_claims(authenticated_app, overrides):
             "/data", headers={"Authorization": f"Bearer {token(key, **overrides)}"}
         )
         assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "claim,offset,status",
+    [("exp", -59, 200), ("exp", -60, 401), ("iat", 60, 200), ("iat", 61, 401)],
+)
+def test_fixed_leeway(authenticated_app, monkeypatch, claim, offset, status):
+    app, _, key = authenticated_app
+    now = int(time.time())
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromtimestamp(now, tz)
+
+    monkeypatch.setattr(jwt.api_jwt, "datetime", FrozenDatetime)
+    encoded = token(key, **{"iat": now, "exp": now + 300, claim: now + offset})
+    with TestClient(app) as client:
+        response = client.get("/data", headers={"Authorization": f"Bearer {encoded}"})
+        assert response.status_code == status
 
 
 @pytest.mark.parametrize("claim", ["iss", "aud", "sub", "iat", "exp"])
@@ -173,22 +194,19 @@ def test_stac_extension_routes_are_protected():
         assert client.get("/_mgmt/ping").status_code == 200
 
 
-def test_explicit_public_paths_and_late_routes(authenticated_app):
-    app, _, _ = authenticated_app
-    auth = OIDCTokenAuth("https://issuer.example", "stac", "https://issuer.example/jwks")
-
-    @app.get("/public")
-    def public():
-        return {}
+def test_late_routes_are_protected_on_reinstallation(authenticated_app):
+    app, auth, key = authenticated_app
 
     @app.get("/late")
     def late():
         return {}
 
-    auth.install(app, public_paths=["/public"])
+    auth.install(app)
     with TestClient(app) as client:
-        assert client.get("/public").status_code == 200
         assert client.get("/late").status_code == 401
+        assert client.get(
+            "/late", headers={"Authorization": f"Bearer {token(key)}"}
+        ).status_code == 200
 
 
 @pytest.mark.parametrize(

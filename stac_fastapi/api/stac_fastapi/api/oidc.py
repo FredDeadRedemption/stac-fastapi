@@ -1,7 +1,7 @@
 """Optional OIDC bearer authentication for any STAC API backend."""
 
 import logging
-from typing import Optional, Sequence
+from typing import Optional
 
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -22,15 +22,11 @@ class OIDCTokenAuth:
         issuer: str,
         audience: str,
         jwks_url: str,
-        algorithms: Sequence[str] = ("EdDSA",),
-        leeway: int = 60,
     ):
-        if not issuer or not audience or not jwks_url or not algorithms:
-            raise ValueError("OIDC issuer, audience, JWKS URL and algorithms are required")
+        if not issuer or not audience or not jwks_url:
+            raise ValueError("OIDC issuer, audience and JWKS URL are required")
         self.issuer = issuer
         self.audience = audience
-        self.algorithms = list(algorithms)
-        self.leeway = leeway
         self.jwks = jwt.PyJWKClient(jwks_url, timeout=3)
 
     def __call__(
@@ -49,10 +45,10 @@ class OIDCTokenAuth:
             claims = jwt.decode(
                 credentials.credentials,
                 key,
-                algorithms=self.algorithms,
+                algorithms=["EdDSA"],
                 issuer=self.issuer,
                 audience=self.audience,
-                leeway=self.leeway,
+                leeway=60,
                 options={"require": ["exp", "iat", "iss", "aud", "sub"]},
             )
         except jwt.PyJWKClientConnectionError as exc:
@@ -77,14 +73,11 @@ class OIDCTokenAuth:
         request.scope["allowed_products"] = set(products)
         return claims
 
-    def install(
-        self, app: FastAPI, public_paths: Sequence[str] = ()
-    ) -> None:
+    def install(self, app: FastAPI) -> None:
         """Protect registered API routes after all extensions have registered."""
         prefix = getattr(app.state, "router_prefix", "")
-        excluded = set(public_paths) | {f"{prefix}/_mgmt/ping"}
         for route in app.routes:
-            if not isinstance(route, APIRoute) or route.path in excluded:
+            if not isinstance(route, APIRoute) or route.path == f"{prefix}/_mgmt/ping":
                 continue
             if any(dependency.dependency is self for dependency in route.dependencies):
                 continue
