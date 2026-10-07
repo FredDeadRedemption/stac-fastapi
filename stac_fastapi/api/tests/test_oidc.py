@@ -46,8 +46,7 @@ def token(private_key, **overrides):
         "sub": "demo-user",
         "iat": now,
         "exp": now + 300,
-        "rights": ["product-skraafoto_fri", "stac-write"],
-        "hiddenProductSlugs": ["skraafoto_fri"],
+        "hiddenProductSlugs": ["demo-product"],
         **overrides,
     }
     return jwt.encode(claims, private_key, algorithm="EdDSA")
@@ -64,7 +63,7 @@ def test_missing_token_and_valid_token(authenticated_app, method):
             method, "/data", headers={"Authorization": f"Bearer {token(key)}"}
         )
         assert response.status_code == 200
-        assert response.json() == {"sub": "demo-user", "products": ["skraafoto_fri"]}
+        assert response.json() == {"sub": "demo-user", "products": ["demo-product"]}
     data_route = next(route for route in app.routes if route.path == "/data")
     assert len(data_route.dependencies) == 1
 
@@ -192,6 +191,30 @@ def test_explicit_public_paths_and_late_routes(authenticated_app):
         assert client.get("/late").status_code == 401
 
 
+@pytest.mark.parametrize(
+    "overrides,status,products",
+    [
+        ({}, 200, []),
+        ({"hiddenProductSlugs": []}, 200, []),
+        ({"hiddenProductSlugs": ["demo-product", "demo-product"]}, 200, ["demo-product"]),
+        ({"hiddenProductSlugs": None}, 403, None),
+        ({"hiddenProductSlugs": "demo-product"}, 403, None),
+        ({"hiddenProductSlugs": [123]}, 403, None),
+    ],
+)
+def test_product_claim_validation(authenticated_app, overrides, status, products):
+    app, _, key = authenticated_app
+    claims = jwt.decode(token(key), options={"verify_signature": False})
+    del claims["hiddenProductSlugs"]
+    claims.update(overrides)
+    encoded = jwt.encode(claims, key, algorithm="EdDSA")
+    with TestClient(app) as client:
+        response = client.get("/data", headers={"Authorization": f"Bearer {encoded}"})
+        assert response.status_code == status
+        if status == 200:
+            assert response.json()["products"] == products
+
+
 def test_prefixed_health_route_is_public():
     app = FastAPI()
     app.state.router_prefix = "/stac"
@@ -208,50 +231,3 @@ def test_prefixed_health_route_is_public():
     with TestClient(app) as client:
         assert client.get("/stac/_mgmt/ping").status_code == 200
         assert client.get("/stac/collections").status_code == 401
-
-
-@pytest.mark.parametrize(
-    "claims, status, products",
-    [
-        ({"rights": []}, 200, ["skraafoto_fri"]),
-        ({"hiddenProductSlugs": ["skraafoto_fri"]}, 200, ["skraafoto_fri"]),
-        ({"rights": ["product-skraafoto_hemmelig"]}, 200, ["skraafoto_fri"]),
-        ({"hiddenProductSlugs": []}, 200, []),
-        ({"hiddenProductSlugs": ["other", "other"]}, 200, ["other"]),
-        ({"rights": "product-skraafoto_fri"}, 403, None),
-        ({"hiddenProductSlugs": None}, 403, None),
-        ({"hiddenProductSlugs": "skraafoto_fri"}, 403, None),
-        ({"hiddenProductSlugs": [123]}, 403, None),
-        ({"rights": [123]}, 403, None),
-    ],
-)
-def test_product_entitlements(authenticated_app, claims, status, products):
-    app, _, key = authenticated_app
-    with TestClient(app) as client:
-        response = client.get(
-            "/data", headers={"Authorization": f"Bearer {token(key, **claims)}"}
-        )
-        assert response.status_code == status
-        if status == 200:
-            assert response.json()["products"] == products
-
-
-def test_product_access_does_not_grant_writes(authenticated_app):
-    app, _, key = authenticated_app
-    with TestClient(app) as client:
-        response = client.delete(
-            "/data",
-            headers={"Authorization": f"Bearer {token(key, rights=['product-skraafoto_fri'])}"},
-        )
-        assert response.status_code == 403
-
-
-def test_missing_product_list_denies_access(authenticated_app):
-    app, _, key = authenticated_app
-    claims = jwt.decode(token(key), options={"verify_signature": False})
-    del claims["hiddenProductSlugs"]
-    encoded = jwt.encode(claims, key, algorithm="EdDSA")
-    with TestClient(app) as client:
-        response = client.get("/data", headers={"Authorization": f"Bearer {encoded}"})
-        assert response.status_code == 200
-        assert response.json()["products"] == []

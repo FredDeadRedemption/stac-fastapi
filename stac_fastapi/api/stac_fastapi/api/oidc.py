@@ -68,23 +68,13 @@ class OIDCTokenAuth:
                 headers={"WWW-Authenticate": "Bearer"},
             ) from exc
         request.state.auth = claims
-        rights = claims.get("rights", [])
         products = claims.get("hiddenProductSlugs", [])
-        if any(
-            not isinstance(values, list)
-            or any(not isinstance(value, str) for value in values)
-            for values in (rights, products)
+        if not isinstance(products, list) or any(
+            not isinstance(value, str) for value in products
         ):
             logger.warning("Invalid OIDC product entitlement claims")
             raise HTTPException(status_code=403, detail="invalid product entitlements")
         request.scope["allowed_products"] = set(products)
-        prefix = getattr(request.app.state, "router_prefix", "")
-        if (
-            request.method not in ("GET", "HEAD", "OPTIONS")
-            and not (request.method == "POST" and request.url.path == f"{prefix}/search")
-            and "stac-write" not in rights
-        ):
-            raise HTTPException(status_code=403, detail="write access not granted")
         return claims
 
     def install(

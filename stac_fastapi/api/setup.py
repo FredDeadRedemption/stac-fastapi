@@ -15,7 +15,7 @@ install_requires = [
 ]
 
 extra_reqs = {
-    "oidc": ["PyJWT[crypto]>=2.8,<2.10"],
+    "oidc": ["PyJWT[crypto]==2.9.0"],
     "dev": [
         "httpx",
         "pytest",
