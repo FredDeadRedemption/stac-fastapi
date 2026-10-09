@@ -1,0 +1,66 @@
+name: release
+
+on:
+  push:
+    branches:
+      - k8s/atlas
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "image and chart version; defaults to <chart appVersion>-<short sha>"
+        required: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # the sqlalchemy app lives in the submodule; without it the image has no backend
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            APP=$(awk -F'"' '/^appVersion:/ {print $2}' chart/skraafoto-stac/Chart.yaml)
+            echo "value=${APP}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.value }}
+            type=raw,value=k8s-atlas
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Helm registry login
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Package and push chart
+        run: |
+          V="${{ steps.version.outputs.value }}"
+          helm package chart/skraafoto-stac --version "$V" --app-version "$V" -d /tmp
+          helm push "/tmp/skraafoto-stac-${V}.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
