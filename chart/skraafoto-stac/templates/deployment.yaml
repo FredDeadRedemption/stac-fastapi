@@ -37,6 +37,10 @@ spec:
             # uvicorn runs with --proxy-headers; only these peers may rewrite scheme and host
             - name: FORWARDED_ALLOW_IPS
               value: {{ required "forwardedAllowIps is required" .Values.forwardedAllowIps | quote }}
+            {{- with .Values.rootPath }}
+            - name: UVICORN_ROOT_PATH
+              value: {{ . | quote }}
+            {{- end }}
             - name: POSTGRES_HOST_READER
               value: {{ required "postgres.hostReader is required" .Values.postgres.hostReader | quote }}
             - name: POSTGRES_HOST_WRITER

@@ -47,6 +47,9 @@ auth:
 # "*" trusts every in-cluster pod, only safe behind a networkpolicy
 forwardedAllowIps: ""
 
+# only needed when the gateway forwards the path unstripped; links follow x-forwarded-prefix
+rootPath: ""
+
 # uvicorn worker processes per pod; two fit the 1gi limit, add throughput with replicaCount
 webConcurrency: "2"
 
