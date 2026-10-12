@@ -47,8 +47,8 @@ auth:
 # "*" trusts every in-cluster pod, only safe behind a networkpolicy
 forwardedAllowIps: ""
 
-# uvicorn worker processes per pod
-webConcurrency: "4"
+# uvicorn worker processes per pod; two fit the 1gi limit, add throughput with replicaCount
+webConcurrency: "2"
 
 podSecurityContext:
   runAsNonRoot: true
@@ -70,6 +70,17 @@ resources:
     memory: 512Mi
   limits:
     memory: 1Gi
+
+# maxUnavailable (not minAvailable) so a one-replica release stays drainable
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# the selector is filled in per release; ScheduleAnyway keeps a one-node cluster schedulable
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
 
 nodeSelector: {}
 tolerations: []
