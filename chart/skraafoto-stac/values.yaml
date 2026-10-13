@@ -29,10 +29,10 @@ postgres:
   port: "5432"
   dbname: ""
 
-# the api reads one schema; itemTable is a materialized view maintained outside this release
+# the api reads one schema; the dagster sync owns both tables, this release never creates them
 stac:
-  schema: stac_api
-  itemTable: images_mvw
+  schema: skraafoto_stac
+  itemTable: images
 
 # caller authentication (oidc bearer tokens), enforced on every route but /_mgmt/ping.
 # disabled -> the api is open. the jwks endpoint is fetched lazily, so a cold issuer
