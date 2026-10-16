@@ -79,13 +79,9 @@ class OIDCTokenAuth:
         ):
             logger.warning("Invalid OIDC product entitlement claims")
             raise HTTPException(status_code=403, detail="invalid product entitlements")
-        requested_products = set(products)
-        if requested_products - {DEFENCE_PRODUCT}:
-            logger.warning("Unknown OIDC product entitlement claims")
-            raise HTTPException(status_code=403, detail="invalid product entitlements")
         request.scope["allowed_products"] = (
             DEFENCE_USER_PRODUCTS
-            if DEFENCE_PRODUCT in requested_products
+            if DEFENCE_PRODUCT in products
             else PUBLIC_USER_PRODUCTS
         )
         return claims

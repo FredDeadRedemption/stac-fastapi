@@ -26,6 +26,7 @@ contain `exp`, `iat`, `iss`, `aud` and `sub`.
 The dependency validates bearer tokens and makes the token claims available
 through `request.state.auth`. Product access is derived from the
 `hiddenProductSlugs` claim: an absent or empty claim selects the standard
-profile, while the defence marker selects the defence profile. Unsupported
-values are rejected. `request.scope["allowed_products"]` contains the
-resulting product allowlist.
+profile, while the defence marker selects the defence profile. The claim lists
+every hidden product the user holds, so other slugs are ignored; a claim that
+is not a list of strings is rejected. `request.scope["allowed_products"]`
+contains the resulting product allowlist.
