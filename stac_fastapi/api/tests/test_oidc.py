@@ -287,7 +287,12 @@ def test_late_routes_are_protected_on_reinstallation(authenticated_app):
             200,
             ["defence-product", "demo-product"],
         ),
-        ({"hiddenProductSlugs": ["unknown"]}, 403, None),
+        ({"hiddenProductSlugs": ["unknown"]}, 200, ["demo-product"]),
+        (
+            {"hiddenProductSlugs": ["defence-product", "unknown"]},
+            200,
+            ["defence-product", "demo-product"],
+        ),
         ({"hiddenProductSlugs": None}, 403, None),
         ({"hiddenProductSlugs": "defence-product"}, 403, None),
         ({"hiddenProductSlugs": [123]}, 403, None),
