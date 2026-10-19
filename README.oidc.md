@@ -39,14 +39,14 @@ is `active`, names this issuer in `iss`, names the introspection client id in
 `aud`, holds `api:access` in `scope`, has not expired and carries a subject.
 Decisions, allow and deny alike, are cached for 30 seconds and never past the
 key's `exp`, so a revoked key keeps working for up to 30 seconds. Transport
-failures are not cached and answer 503. Threads that arrive on a cold key wait
-for one introspection call rather than making their own. Without
-`introspection_url` the opaque path is closed and only JWTs are accepted.
+failures are not cached and answer 503. Without `introspection_url` the opaque
+path is closed and only JWTs are accepted.
 
 The dependency makes the claims, or the introspection reply, available through
 `request.state.auth`. Product access is derived from the `hiddenProductSlugs`
 claim: an absent or empty claim selects the standard profile, while the defence
-marker selects the defence profile. Unsupported values are rejected.
-`request.scope["allowed_products"]` contains the resulting product allowlist.
-API key introspection carries no product claims, so a key always selects the
-standard profile; defence data needs an OIDC token.
+marker selects the defence profile. The claim lists every hidden product the
+holder reaches, so other slugs are ignored; a claim that is not a list of
+strings is rejected. `request.scope["allowed_products"]` contains the resulting
+product allowlist. An API key carries the claim only from kds-auth 3.8.0, and
+only an organisation key can hold a hidden product.
