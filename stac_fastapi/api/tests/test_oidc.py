@@ -391,6 +391,7 @@ def reply(**overrides):
         lambda client: client.get("/data", headers={"token": "opaque-key"}),
         lambda client: client.get("/data", params={"token": "opaque-key"}),
     ],
+    ids=["authorization", "header", "query"],
 )
 def test_opaque_key_from_every_source(introspecting_app, call):
     app, _, calls = introspecting_app
@@ -518,10 +519,12 @@ def test_the_oldest_decision_is_evicted(introspecting_app, monkeypatch):
 @pytest.mark.parametrize(
     "boom",
     [
-        urllib.error.HTTPError("url", 401, "invalid_client", {}, None),
-        urllib.error.URLError("connection refused"),
-        ValueError("not json"),
+        # built on demand: an HTTPError holds a file object, which pytest cannot name
+        lambda: urllib.error.HTTPError("url", 401, "invalid_client", {}, None),
+        lambda: urllib.error.URLError("connection refused"),
+        lambda: ValueError("not json"),
     ],
+    ids=["refused", "unreachable", "unparseable"],
 )
 def test_introspection_failure_is_unavailable_and_uncached(
     introspecting_app, monkeypatch, boom
@@ -530,7 +533,7 @@ def test_introspection_failure_is_unavailable_and_uncached(
 
     def introspect(token):
         calls.append(token)
-        raise boom
+        raise boom()
 
     monkeypatch.setattr(auth, "_introspect", introspect)
     with TestClient(app, raise_server_exceptions=False) as client:
