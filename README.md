@@ -71,3 +71,7 @@ To run the tests:
 ```shell
 python -m pytest
 ```
+
+## Atlas
+
+This branch carries the Atlas version. The main difference from upstream is JWT based access control: an optional OIDC layer (`stac_fastapi.api.oidc`) protects every API route except the ping endpoint. A credential arrives as a `Authorization: Bearer` header, a `token` header, or a `token` query parameter. JWTs are verified in-process against the issuer's JWKS; opaque API keys are introspected over RFC 7662 behind a short-lived decision cache. The product entitlements in the token claims decide which products the request can see, exposed to the backend as `request.scope["allowed_products"]`.
